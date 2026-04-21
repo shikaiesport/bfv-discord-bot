@@ -2,7 +2,12 @@ import discord
 import requests
 import asyncio
 import os
+from flask import Flask
+from threading import Thread
 
+# =====================
+# CONFIG
+# =====================
 TOKEN = os.environ["TOKEN"]
 USER_ID = int(os.environ["USER_ID"])
 
@@ -11,16 +16,35 @@ MIN_PLAYERS = 45
 TARGET_MAP = "Operation Underground"
 REGION = "EU"
 
+# =====================
+# DISCORD CLIENT
+# =====================
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
 already_reported = set()
 
+# =====================
+# FLASK (IMPORTANT FOR RENDER)
+# =====================
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "BFV Bot is running 🚀"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+# =====================
+# SERVER LOGIC
+# =====================
 def get_servers():
     url = "https://api.gametools.network/bfv/servers?platform=pc&limit=200"
     try:
         r = requests.get(url, timeout=10)
-        return r.json()["servers"]
+        return r.json().get("servers", [])
     except:
         return []
 
@@ -60,9 +84,23 @@ async def check_servers():
 
         await asyncio.sleep(CHECK_INTERVAL)
 
+# =====================
+# DISCORD EVENTS
+# =====================
 @client.event
 async def on_ready():
     print(f"Bot online: {client.user}")
     client.loop.create_task(check_servers())
 
-client.run(TOKEN)
+# =====================
+# STARTUP (IMPORTANT)
+# =====================
+def run_discord():
+    client.run(TOKEN)
+
+if __name__ == "__main__":
+    # Flask in eigenem Thread (wichtig für Render Web Service)
+    Thread(target=run_flask).start()
+
+    # Discord Bot im Main Thread
+    run_discord()
