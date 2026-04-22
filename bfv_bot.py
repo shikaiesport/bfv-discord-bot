@@ -11,12 +11,53 @@ USER_ID = int(os.environ["USER_ID"])
 CHECK_INTERVAL = 30
 MIN_PLAYERS = 45
 
-intents = discord.Intents.default()
-client = discord.Client(intents=intents)
+# ---------------- BOT CLASS ----------------
 
-already_reported = set()
+class BFVBot(discord.Client):
+    async def setup_hook(self):
+        print("SETUP HOOK STARTED")
+        self.loop.create_task(self.check_servers())
 
-# ---------------- Flask ----------------
+    async def check_servers(self):
+        await self.wait_until_ready()
+        print("CHECK LOOP STARTED")
+
+        user = await self.fetch_user(USER_ID)
+
+        while True:
+            servers = get_servers()
+            print("Servers:", len(servers))
+
+            for s in servers:
+                map_name = s.get("mapNamePretty", "").lower()
+                players = get_players(s)
+                name = s.get("name")
+                server_id = s.get("gameId")
+
+                if "underground" in map_name:
+                    print("FOUND:", name, players)
+
+                if (
+                    "underground" in map_name
+                    and players >= MIN_PLAYERS
+                    and is_eu(s)
+                ):
+                    print("MATCH:", name, players)
+
+                    if server_id not in already_reported:
+                        already_reported.add(server_id)
+
+                        msg = f"🔥 Underground EU\n{name}\nSpieler: {players}"
+
+                        try:
+                            await user.send(msg)
+                            print("DM SENT")
+                        except Exception as e:
+                            print("DM ERROR:", e)
+
+            await asyncio.sleep(CHECK_INTERVAL)
+
+# ---------------- FLASK ----------------
 
 app = Flask(__name__)
 
@@ -29,6 +70,8 @@ def run_flask():
     app.run(host="0.0.0.0", port=port)
 
 # ---------------- API ----------------
+
+already_reported = set()
 
 def get_servers():
     url = "https://api.gametools.network/bfv/servers?platform=pc&limit=200"
@@ -46,55 +89,10 @@ def is_eu(server):
     region = server.get("region", "").lower()
     return any(x in region for x in ["eu", "europe", "de", "frankfurt"])
 
-# ---------------- LOOP ----------------
-
-async def check_servers():
-    await client.wait_until_ready()
-    print("CHECK LOOP STARTED")
-
-    user = await client.fetch_user(USER_ID)
-
-    while True:
-        servers = get_servers()
-        print("Servers:", len(servers))
-
-        for s in servers:
-            map_name = s.get("mapNamePretty", "").lower()
-            players = get_players(s)
-            name = s.get("name")
-            server_id = s.get("gameId")
-
-            if "underground" in map_name:
-                print("FOUND:", name, players)
-
-            if (
-                "underground" in map_name
-                and players >= MIN_PLAYERS
-                and is_eu(s)
-            ):
-                print("MATCH:", name, players)
-
-                if server_id not in already_reported:
-                    already_reported.add(server_id)
-
-                    msg = f"🔥 Underground EU\n{name}\nSpieler: {players}"
-
-                    try:
-                        await user.send(msg)
-                        print("DM SENT")
-                    except Exception as e:
-                        print("DM ERROR:", e)
-
-        await asyncio.sleep(CHECK_INTERVAL)
-
-# ---------------- READY ----------------
-
-@client.event
-async def on_ready():
-    print("BOT READY:", client.user)
-    asyncio.create_task(check_servers())
-
 # ---------------- START ----------------
+
+intents = discord.Intents.default()
+client = BFVBot(intents=intents)
 
 if __name__ == "__main__":
     Thread(target=run_flask).start()
