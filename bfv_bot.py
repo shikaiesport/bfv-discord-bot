@@ -50,14 +50,12 @@ def is_eu(server):
 
 async def check_servers():
     await client.wait_until_ready()
-
     print("CHECK LOOP STARTED")
 
     user = await client.fetch_user(USER_ID)
 
     while True:
         servers = get_servers()
-
         print("Servers:", len(servers))
 
         for s in servers:
@@ -79,11 +77,7 @@ async def check_servers():
                 if server_id not in already_reported:
                     already_reported.add(server_id)
 
-                    msg = (
-                        f"🔥 Operation Underground EU Server\n"
-                        f"{name}\n"
-                        f"Spieler: {players}"
-                    )
+                    msg = f"🔥 Underground EU\n{name}\nSpieler: {players}"
 
                     try:
                         await user.send(msg)
@@ -93,17 +87,15 @@ async def check_servers():
 
         await asyncio.sleep(CHECK_INTERVAL)
 
+# ---------------- READY ----------------
+
+@client.event
+async def on_ready():
+    print("BOT READY:", client.user)
+    asyncio.create_task(check_servers())
+
 # ---------------- START ----------------
-
-def start_loop():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(check_servers())
-
-def run_discord():
-    client.run(TOKEN)
 
 if __name__ == "__main__":
     Thread(target=run_flask).start()
-    Thread(target=start_loop).start()
-    run_discord()
+    client.run(TOKEN)
