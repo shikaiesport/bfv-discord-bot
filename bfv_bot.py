@@ -9,32 +9,33 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 USER_ID = int(os.getenv("USER_ID"))
 
 THRESHOLD = 45
-SEARCH_URL = "https://api.battlemetrics.com/servers?filter[search]=underground"
+
+URL = "https://api.battlemetrics.com/servers?filter[search]=underground&page[size]=50"
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
 app = Flask(__name__)
 
-notified_servers = set()
+notified = set()
 
 
 def get_servers():
     try:
-        r = requests.get(SEARCH_URL, timeout=10)
+        r = requests.get(URL, timeout=10)
         data = r.json()
 
-        servers = []
+        results = []
 
         for s in data["data"]:
-            attrs = s["attributes"]
-            name = attrs.get("name", "").lower()
-            players = attrs.get("players", 0)
+            attr = s["attributes"]
+            name = attr.get("name", "").lower()
+            players = attr.get("players", 0)
 
             if "underground" in name and players >= THRESHOLD:
-                servers.append((s["id"], name, players))
+                results.append((s["id"], name, players))
 
-        return servers
+        return results
 
     except Exception as e:
         print("API ERROR:", e)
@@ -42,27 +43,24 @@ def get_servers():
 
 
 async def monitor():
-    global notified_servers
+    global notified
 
-    await client.wait_until_ready()
-
-    while not client.is_closed():
+    while True:
         servers = get_servers()
 
-        print("Found:", servers)
+        print("CHECK:", servers)
 
         for sid, name, players in servers:
-            if sid not in notified_servers:
-                user = await client.fetch_user(USER_ID)
-                await user.send(
-                    f"🚨 Underground Server ONLINE!\n"
-                    f"Name: {name}\nPlayers: {players}"
-                )
-                notified_servers.add(sid)
+            if sid not in notified:
+                try:
+                    user = await client.fetch_user(USER_ID)
+                    await user.send(f"🚨 Underground Server!\n{name} ({players})")
+                    notified.add(sid)
+                except Exception as e:
+                    print("DM ERROR:", e)
 
-        # Reset wenn Spieler runtergehen (optional sauberer refresh)
         if not servers:
-            notified_servers.clear()
+            notified.clear()
 
         await asyncio.sleep(60)
 
@@ -71,21 +69,18 @@ async def monitor():
 async def on_ready():
     print(f"Logged in as {client.user}")
 
+    # 🔥 WICHTIG: Loop HIER starten
+    client.loop.create_task(monitor())
+
 
 @app.route("/")
 def home():
-    return "Bot läuft"
+    return "OK"
 
 
 def run_flask():
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
 
 
-def run_bot():
-    client.loop.create_task(monitor())
-    client.run(TOKEN)
-
-
-if __name__ == "__main__":
-    Thread(target=run_flask).start()
-    run_bot()
+Thread(target=run_flask).start()
+client.run(TOKEN)
