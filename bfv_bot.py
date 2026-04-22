@@ -2,8 +2,6 @@ import discord
 import requests
 import asyncio
 import os
-from flask import Flask
-from threading import Thread
 
 TOKEN = os.environ["TOKEN"]
 USER_ID = int(os.environ["USER_ID"])
@@ -11,65 +9,8 @@ USER_ID = int(os.environ["USER_ID"])
 CHECK_INTERVAL = 30
 MIN_PLAYERS = 45
 
-# ---------------- BOT CLASS ----------------
-
-class BFVBot(discord.Client):
-    async def setup_hook(self):
-        print("SETUP HOOK STARTED")
-        self.loop.create_task(self.check_servers())
-
-    async def check_servers(self):
-        await self.wait_until_ready()
-        print("CHECK LOOP STARTED")
-
-        user = await self.fetch_user(USER_ID)
-
-        while True:
-            servers = get_servers()
-            print("Servers:", len(servers))
-
-            for s in servers:
-                map_name = s.get("mapNamePretty", "").lower()
-                players = get_players(s)
-                name = s.get("name")
-                server_id = s.get("gameId")
-
-                if "underground" in map_name:
-                    print("FOUND:", name, players)
-
-                if (
-                    "underground" in map_name
-                    and players >= MIN_PLAYERS
-                    and is_eu(s)
-                ):
-                    print("MATCH:", name, players)
-
-                    if server_id not in already_reported:
-                        already_reported.add(server_id)
-
-                        msg = f"🔥 Underground EU\n{name}\nSpieler: {players}"
-
-                        try:
-                            await user.send(msg)
-                            print("DM SENT")
-                        except Exception as e:
-                            print("DM ERROR:", e)
-
-            await asyncio.sleep(CHECK_INTERVAL)
-
-# ---------------- FLASK ----------------
-
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "BFV Bot running"
-
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-
-# ---------------- API ----------------
+intents = discord.Intents.default()
+client = discord.Client(intents=intents)
 
 already_reported = set()
 
@@ -79,21 +20,59 @@ def get_servers():
         r = requests.get(url, timeout=10)
         return r.json().get("servers", [])
     except Exception as e:
-        print("API error:", e)
+        print("API ERROR:", e)
         return []
 
-def get_players(server):
-    return server.get("slots", {}).get("Soldier", {}).get("current", 0)
+def get_players(s):
+    return s.get("slots", {}).get("Soldier", {}).get("current", 0)
 
-def is_eu(server):
-    region = server.get("region", "").lower()
+def is_eu(s):
+    region = s.get("region", "").lower()
     return any(x in region for x in ["eu", "europe", "de", "frankfurt"])
 
-# ---------------- START ----------------
+async def check_loop():
+    await client.wait_until_ready()
 
-intents = discord.Intents.default()
-client = BFVBot(intents=intents)
+    print("CHECK LOOP STARTED")
 
-if __name__ == "__main__":
-    Thread(target=run_flask).start()
-    client.run(TOKEN)
+    user = await client.fetch_user(USER_ID)
+
+    while True:
+        servers = get_servers()
+        print("Servers:", len(servers))
+
+        for s in servers:
+            map_name = s.get("mapNamePretty", "").lower()
+            players = get_players(s)
+            name = s.get("name")
+            server_id = s.get("gameId")
+
+            if "underground" in map_name:
+                print("FOUND:", name, players)
+
+            if (
+                "underground" in map_name
+                and players >= MIN_PLAYERS
+                and is_eu(s)
+            ):
+                print("MATCH:", name, players)
+
+                if server_id not in already_reported:
+                    already_reported.add(server_id)
+
+                    try:
+                        await user.send(
+                            f"🔥 Underground EU\n{name}\nSpieler: {players}"
+                        )
+                        print("DM SENT")
+                    except Exception as e:
+                        print("DM ERROR:", e)
+
+        await asyncio.sleep(CHECK_INTERVAL)
+
+@client.event
+async def on_ready():
+    print("BOT READY:", client.user)
+    client.loop.create_task(check_loop())
+
+client.run(TOKEN)
