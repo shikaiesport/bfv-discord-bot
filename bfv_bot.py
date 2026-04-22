@@ -16,21 +16,22 @@ MIN_PLAYERS = 45
 TARGET_MAP = "operation underground"
 
 # =====================
-# DISCORD SETUP
+# DISCORD
 # =====================
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
 already_reported = set()
+loop_started = False
 
 # =====================
-# FLASK (RENDER PORT FIX)
+# FLASK (FOR RENDER)
 # =====================
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "BFV Bot running 🚀"
+    return "BFV Bot running"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -43,24 +44,20 @@ def get_servers():
     url = "https://api.gametools.network/bfv/servers?platform=pc&limit=200"
     try:
         r = requests.get(url, timeout=10)
-        data = r.json()
-        return data.get("servers", [])
+        return r.json().get("servers", [])
     except Exception as e:
         print("API error:", e)
         return []
-
-# =====================
-# FILTER HELPERS
-# =====================
-def is_eu(server):
-    region = server.get("region", "").lower()
-    return any(x in region for x in ["eu", "europe", "de", "frankfurt"])
 
 def get_players(server):
     try:
         return server.get("slots", {}).get("Soldier", {}).get("current", 0)
     except:
         return 0
+
+def is_eu(server):
+    region = server.get("region", "").lower()
+    return any(x in region for x in ["eu", "europe", "de", "frankfurt"])
 
 # =====================
 # MAIN LOOP
@@ -69,27 +66,37 @@ async def check_servers():
     await client.wait_until_ready()
     user = await client.fetch_user(USER_ID)
 
+    print("Server checking started")
+
     while not client.is_closed():
         servers = get_servers()
 
-        print(f"[DEBUG] Servers fetched: {len(servers)}")
+        print(f"[DEBUG] servers fetched: {len(servers)}")
 
         for s in servers:
             map_name = s.get("mapNamePretty", "").lower()
             name = s.get("name", "unknown")
             server_id = s.get("gameId")
-
+            region = s.get("region")
             players = get_players(s)
 
-            # DEBUG (sehr wichtig beim ersten Start)
-            print(f"[DEBUG] {map_name} | {players} | {s.get('region')} | {name}")
+            # DEBUG nur Underground anzeigen
+            if "underground" in map_name:
+                print("FOUND UNDERGROUND:")
+                print("Map:", map_name)
+                print("Players:", players)
+                print("Region:", region)
+                print("Name:", name)
+                print("------")
 
             # FILTER
             if (
-                TARGET_MAP in map_name
+                "underground" in map_name
                 and players >= MIN_PLAYERS
                 and is_eu(s)
             ):
+                print("MATCHED SERVER:", name, players)
+
                 if server_id not in already_reported:
                     already_reported.add(server_id)
 
@@ -100,8 +107,11 @@ async def check_servers():
                         f"Map: {map_name}"
                     )
 
-                    await user.send(msg)
-                    print("[ALERT SENT]", name)
+                    try:
+                        await user.send(msg)
+                        print("DM SENT")
+                    except Exception as e:
+                        print("DM FAILED:", e)
 
         await asyncio.sleep(CHECK_INTERVAL)
 
@@ -110,8 +120,13 @@ async def check_servers():
 # =====================
 @client.event
 async def on_ready():
+    global loop_started
+
     print(f"Bot online: {client.user}")
-    client.loop.create_task(check_servers())
+
+    if not loop_started:
+        asyncio.create_task(check_servers())
+        loop_started = True
 
 # =====================
 # START
