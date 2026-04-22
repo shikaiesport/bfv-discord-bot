@@ -1,104 +1,88 @@
-import discord
-import requests
-import asyncio
 import os
+import discord
+from discord.ext import commands, tasks
 from flask import Flask
-from threading import Thread
+import requests
 
-TOKEN = os.environ["TOKEN"]
-USER_ID = int(os.environ["USER_ID"])
-
-CHECK_INTERVAL = 30
-MIN_PLAYERS = 45
-
-# ---------------- DISCORD ----------------
-
-intents = discord.Intents.default()
-client = discord.Client(intents=intents)
-
-already_reported = set()
-
-# ---------------- FLASK (Render Port Fix) ----------------
-
+# ---------------- FLASK (Render Pflicht) ----------------
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "BFV Bot running"
+    return "BFV Bot läuft"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-# ---------------- API ----------------
 
-def get_servers():
-    url = "https://api.gametools.network/bfv/servers?platform=pc&limit=200"
-    try:
-        r = requests.get(url, timeout=10)
-        return r.json().get("servers", [])
-    except Exception as e:
-        print("API ERROR:", e)
-        return []
+# ---------------- DISCORD ----------------
+intents = discord.Intents.default()
+intents.message_content = True
 
-def get_players(server):
-    return server.get("slots", {}).get("Soldier", {}).get("current", 0)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-def is_eu(server):
-    region = server.get("region", "").lower()
-    return any(x in region for x in ["eu", "europe", "de", "frankfurt"])
+# 👉 HIER SPEICHERN WIR DEN CHANNEL
+ALERT_CHANNEL_ID = None
 
-# ---------------- LOOP ----------------
+# ---------------- BEISPIEL SERVER DATEN ----------------
+def get_server_data():
+    """
+    🔴 HIER kommt deine echte BFV API rein
+    """
+    # Beispiel Fake-Daten (ersetzen!)
+    return {
+        "name": "Underground Server",
+        "players": 50
+    }
 
-async def check_loop():
-    await client.wait_until_ready()
 
-    print("CHECK LOOP STARTED")
+# ---------------- ALERT LOOP ----------------
+@tasks.loop(seconds=60)  # alle 60 Sekunden prüfen
+async def check_servers():
+    global ALERT_CHANNEL_ID
 
-    user = await client.fetch_user(USER_ID)
+    if ALERT_CHANNEL_ID is None:
+        return
 
-    while True:
-        servers = get_servers()
-        print("Servers:", len(servers))
+    channel = bot.get_channel(ALERT_CHANNEL_ID)
+    if not channel:
+        return
 
-        for s in servers:
-            map_name = s.get("mapNamePretty", "").lower()
-            players = get_players(s)
-            name = s.get("name")
-            server_id = s.get("gameId")
+    data = get_server_data()
 
-            if "underground" in map_name:
-                print("FOUND:", name, players)
+    if data["players"] > 45:
+        await channel.send(
+            f"🚨 **ALERT!**\n"
+            f"Server: {data['name']}\n"
+            f"👥 Spieler: {data['players']} (>45!)"
+        )
 
-            if (
-                "underground" in map_name
-                and players >= MIN_PLAYERS
-                and is_eu(s)
-            ):
-                print("MATCH:", name, players)
-
-                if server_id not in already_reported:
-                    already_reported.add(server_id)
-
-                    try:
-                        await user.send(
-                            f"🔥 Operation Underground EU\n{name}\nSpieler: {players}"
-                        )
-                        print("DM SENT")
-                    except Exception as e:
-                        print("DM ERROR:", e)
-
-        await asyncio.sleep(CHECK_INTERVAL)
 
 # ---------------- EVENTS ----------------
-
-@client.event
+@bot.event
 async def on_ready():
-    print("BOT READY:", client.user)
-    asyncio.create_task(check_loop())
+    print(f"✅ Eingeloggt als {bot.user}")
+    check_servers.start()
+
+
+# ---------------- COMMANDS ----------------
+@bot.command()
+async def setchannel(ctx):
+    """Setzt den Alert Channel"""
+    global ALERT_CHANNEL_ID
+    ALERT_CHANNEL_ID = ctx.channel.id
+    await ctx.send("✅ Alert Channel gesetzt!")
+
+
+@bot.command()
+async def test(ctx):
+    await ctx.send("🔧 Bot funktioniert!")
+
 
 # ---------------- START ----------------
-
 if __name__ == "__main__":
-    Thread(target=run_web).start()
-    client.run(TOKEN)
+    import threading
+    threading.Thread(target=run_web).start()
+
+    bot.run(os.environ["TOKEN"])
