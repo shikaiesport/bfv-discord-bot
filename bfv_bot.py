@@ -2,6 +2,8 @@ import discord
 import requests
 import asyncio
 import os
+from flask import Flask
+from threading import Thread
 
 TOKEN = os.environ["TOKEN"]
 USER_ID = int(os.environ["USER_ID"])
@@ -9,10 +11,26 @@ USER_ID = int(os.environ["USER_ID"])
 CHECK_INTERVAL = 30
 MIN_PLAYERS = 45
 
+# ---------------- DISCORD ----------------
+
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
 already_reported = set()
+
+# ---------------- FLASK (Render Port Fix) ----------------
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "BFV Bot running"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+# ---------------- API ----------------
 
 def get_servers():
     url = "https://api.gametools.network/bfv/servers?platform=pc&limit=200"
@@ -23,12 +41,14 @@ def get_servers():
         print("API ERROR:", e)
         return []
 
-def get_players(s):
-    return s.get("slots", {}).get("Soldier", {}).get("current", 0)
+def get_players(server):
+    return server.get("slots", {}).get("Soldier", {}).get("current", 0)
 
-def is_eu(s):
-    region = s.get("region", "").lower()
+def is_eu(server):
+    region = server.get("region", "").lower()
     return any(x in region for x in ["eu", "europe", "de", "frankfurt"])
+
+# ---------------- LOOP ----------------
 
 async def check_loop():
     await client.wait_until_ready()
@@ -62,7 +82,7 @@ async def check_loop():
 
                     try:
                         await user.send(
-                            f"🔥 Underground EU\n{name}\nSpieler: {players}"
+                            f"🔥 Operation Underground EU\n{name}\nSpieler: {players}"
                         )
                         print("DM SENT")
                     except Exception as e:
@@ -70,9 +90,15 @@ async def check_loop():
 
         await asyncio.sleep(CHECK_INTERVAL)
 
+# ---------------- EVENTS ----------------
+
 @client.event
 async def on_ready():
     print("BOT READY:", client.user)
-    client.loop.create_task(check_loop())
+    asyncio.create_task(check_loop())
 
-client.run(TOKEN)
+# ---------------- START ----------------
+
+if __name__ == "__main__":
+    Thread(target=run_web).start()
+    client.run(TOKEN)
