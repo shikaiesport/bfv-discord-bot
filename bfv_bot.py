@@ -5,28 +5,19 @@ import os
 from flask import Flask
 from threading import Thread
 
-# =====================
-# CONFIG
-# =====================
 TOKEN = os.environ["TOKEN"]
 USER_ID = int(os.environ["USER_ID"])
 
 CHECK_INTERVAL = 30
 MIN_PLAYERS = 45
-TARGET_MAP = "operation underground"
 
-# =====================
-# DISCORD
-# =====================
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
 already_reported = set()
-loop_started = False
 
-# =====================
-# FLASK (FOR RENDER)
-# =====================
+# ---------------- Flask ----------------
+
 app = Flask(__name__)
 
 @app.route("/")
@@ -37,9 +28,8 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-# =====================
-# API
-# =====================
+# ---------------- API ----------------
+
 def get_servers():
     url = "https://api.gametools.network/bfv/servers?platform=pc&limit=200"
     try:
@@ -50,87 +40,70 @@ def get_servers():
         return []
 
 def get_players(server):
-    try:
-        return server.get("slots", {}).get("Soldier", {}).get("current", 0)
-    except:
-        return 0
+    return server.get("slots", {}).get("Soldier", {}).get("current", 0)
 
 def is_eu(server):
     region = server.get("region", "").lower()
     return any(x in region for x in ["eu", "europe", "de", "frankfurt"])
 
-# =====================
-# MAIN LOOP
-# =====================
+# ---------------- LOOP ----------------
+
 async def check_servers():
     await client.wait_until_ready()
+
+    print("CHECK LOOP STARTED")
+
     user = await client.fetch_user(USER_ID)
 
-    print("Server checking started")
-
-    while not client.is_closed():
+    while True:
         servers = get_servers()
 
-        print(f"[DEBUG] servers fetched: {len(servers)}")
+        print("Servers:", len(servers))
 
         for s in servers:
             map_name = s.get("mapNamePretty", "").lower()
-            name = s.get("name", "unknown")
-            server_id = s.get("gameId")
-            region = s.get("region")
             players = get_players(s)
+            name = s.get("name")
+            server_id = s.get("gameId")
 
-            # DEBUG nur Underground anzeigen
             if "underground" in map_name:
-                print("FOUND UNDERGROUND:")
-                print("Map:", map_name)
-                print("Players:", players)
-                print("Region:", region)
-                print("Name:", name)
-                print("------")
+                print("FOUND:", name, players, map_name)
 
-            # FILTER
             if (
                 "underground" in map_name
                 and players >= MIN_PLAYERS
                 and is_eu(s)
             ):
-                print("MATCHED SERVER:", name, players)
+                print("MATCH:", name, players)
 
                 if server_id not in already_reported:
                     already_reported.add(server_id)
 
                     msg = (
-                        f"🔥 Operation Underground EU Server gefunden!\n"
-                        f"Server: {name}\n"
-                        f"Spieler: {players}\n"
-                        f"Map: {map_name}"
+                        f"🔥 Operation Underground EU Server\n"
+                        f"{name}\n"
+                        f"Spieler: {players}"
                     )
 
                     try:
                         await user.send(msg)
                         print("DM SENT")
                     except Exception as e:
-                        print("DM FAILED:", e)
+                        print("DM ERROR:", e)
 
         await asyncio.sleep(CHECK_INTERVAL)
 
-# =====================
-# DISCORD EVENTS
-# =====================
+# ---------------- READY ----------------
+
 @client.event
 async def on_ready():
-    global loop_started
+    print("BOT READY:", client.user)
 
-    print(f"Bot online: {client.user}")
+    # HIER der sichere Start
+    client.loop.create_task(check_servers())
 
-    if not loop_started:
-        asyncio.create_task(check_servers())
-        loop_started = True
+# ---------------- START ----------------
 
-# =====================
-# START
-# =====================
 def run_discord():
     client.run(TOKEN)
 
