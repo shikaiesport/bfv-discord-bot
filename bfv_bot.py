@@ -3,66 +3,47 @@ import discord
 from discord.ext import commands, tasks
 from flask import Flask
 
-# ---------------- FLASK (Render Pflicht) ----------------
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "BFV Bot läuft"
+    return "Bot läuft"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
 
-# ---------------- DISCORD ----------------
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# 👉 DEINE DISCORD USER ID HIER EINTRAGEN
-YOUR_USER_ID = 123456789012345678  # <-- ersetzen!
+# 🔐 SAFE: kommt aus Render ENV
+USER_ID = int(os.environ["USER_ID"])
 
 
-# ---------------- SERVER DATEN (PLACEHOLDER) ----------------
-def get_server_data():
-    # 🔴 HIER deine echte BFV API rein
-    return {
-        "name": "Underground Server",
-        "players": 50
-    }
+def get_server():
+    return {"name": "Underground", "players": 50}
 
 
-# ---------------- CHECK LOOP ----------------
 @tasks.loop(seconds=60)
-async def check_servers():
-    data = get_server_data()
+async def check():
+    data = get_server()
 
     if data["players"] > 45:
-        user = await bot.fetch_user(YOUR_USER_ID)
-
+        user = await bot.fetch_user(USER_ID)
         await user.send(
-            f"🚨 **BFV ALERT!**\n"
-            f"Server: {data['name']}\n"
-            f"👥 Spieler: {data['players']} (>45)"
+            f"🚨 Server Alert: {data['players']} Players"
         )
 
 
-# ---------------- READY ----------------
 @bot.event
 async def on_ready():
-    print(f"✅ Online als {bot.user}")
-    check_servers.start()
+    print("Bot ready")
+    check.start()
 
 
-# ---------------- TEST COMMAND ----------------
-@bot.command()
-async def test(ctx):
-    await ctx.send("Bot läuft!")
-
-
-# ---------------- START ----------------
 if __name__ == "__main__":
     import threading
     threading.Thread(target=run_web).start()
