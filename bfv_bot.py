@@ -1,101 +1,91 @@
 import os
+import asyncio
 import discord
-from discord.ext import commands, tasks
-from flask import Flask
 import requests
+from flask import Flask
+from threading import Thread
 
-# ---------------- WEB SERVER (Render Pflicht) ----------------
+TOKEN = os.getenv("DISCORD_TOKEN")
+USER_ID = int(os.getenv("USER_ID"))
+
+THRESHOLD = 45
+SEARCH_URL = "https://api.battlemetrics.com/servers?filter[search]=underground"
+
+intents = discord.Intents.default()
+client = discord.Client(intents=intents)
+
 app = Flask(__name__)
 
-@app.route("/")
-def home():
-    return "BFV Bot is running"
+notified_servers = set()
 
 
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-
-
-# ---------------- DISCORD BOT ----------------
-intents = discord.Intents.default()
-intents.message_content = True
-
-bot = commands.Bot(command_prefix="!", intents=intents)
-
-TOKEN = os.environ["TOKEN"]
-USER_ID = int(os.environ["USER_ID"])
-
-# 👉 HIER DEINE API EINTRAGEN
-API_URL = os.environ["API_URL"]
-
-
-# ---------------- API CALL ----------------
 def get_servers():
-    """
-    Erwartet:
-    [
-        {"name": "Underground #1", "players": 50},
-        ...
-    ]
-    """
-
     try:
-        r = requests.get(API_URL, timeout=10)
-        return r.json()
+        r = requests.get(SEARCH_URL, timeout=10)
+        data = r.json()
+
+        servers = []
+
+        for s in data["data"]:
+            attrs = s["attributes"]
+            name = attrs.get("name", "").lower()
+            players = attrs.get("players", 0)
+
+            if "underground" in name and players >= THRESHOLD:
+                servers.append((s["id"], name, players))
+
+        return servers
 
     except Exception as e:
-        print("API Fehler:", e)
+        print("API ERROR:", e)
         return []
 
 
-# ---------------- STATE (kein Spam) ----------------
-alerted = set()
+async def monitor():
+    global notified_servers
+
+    await client.wait_until_ready()
+
+    while not client.is_closed():
+        servers = get_servers()
+
+        print("Found:", servers)
+
+        for sid, name, players in servers:
+            if sid not in notified_servers:
+                user = await client.fetch_user(USER_ID)
+                await user.send(
+                    f"🚨 Underground Server ONLINE!\n"
+                    f"Name: {name}\nPlayers: {players}"
+                )
+                notified_servers.add(sid)
+
+        # Reset wenn Spieler runtergehen (optional sauberer refresh)
+        if not servers:
+            notified_servers.clear()
+
+        await asyncio.sleep(60)
 
 
-# ---------------- LOOP ----------------
-@tasks.loop(seconds=60)
-async def check_servers():
-    global alerted
-
-    servers = get_servers()
-
-    user = await bot.fetch_user(USER_ID)
-
-    for s in servers:
-
-        name = s.get("name", "").lower()
-        players = int(s.get("players", 0))
-
-        is_underground = "underground" in name
-        key = s.get("name")
-
-        if is_underground and players > 45 and key not in alerted:
-
-            await user.send(
-                f"🚨 BFV ALERT\n"
-                f"Server: {s['name']}\n"
-                f"Players: {players}"
-            )
-
-            alerted.add(key)
-
-        # Reset wenn wieder runter
-        if players <= 45 and key in alerted:
-            alerted.remove(key)
-
-
-# ---------------- READY ----------------
-@bot.event
+@client.event
 async def on_ready():
-    print(f"Bot online als {bot.user}")
-    check_servers.start()
+    print(f"Logged in as {client.user}")
 
 
-# ---------------- START ----------------
+@app.route("/")
+def home():
+    return "Bot läuft"
+
+
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+
+
+def run_bot():
+    client.loop.create_task(monitor())
+    client.run(TOKEN)
+
+
 if __name__ == "__main__":
-    import threading
-
-    threading.Thread(target=run_web).start()
-
-    bot.run(TOKEN)
+    Thread(target=run_flask).start()
+    run_bot()
