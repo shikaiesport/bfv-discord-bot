@@ -67,7 +67,7 @@ async def check_servers():
             server_id = s.get("gameId")
 
             if "underground" in map_name:
-                print("FOUND:", name, players, map_name)
+                print("FOUND:", name, players)
 
             if (
                 "underground" in map_name
@@ -93,20 +93,17 @@ async def check_servers():
 
         await asyncio.sleep(CHECK_INTERVAL)
 
-# ---------------- READY ----------------
-
-@client.event
-async def on_ready():
-    print("BOT READY:", client.user)
-
-    # HIER der sichere Start
-    client.loop.create_task(check_servers())
-
 # ---------------- START ----------------
+
+def start_loop():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(check_servers())
 
 def run_discord():
     client.run(TOKEN)
 
 if __name__ == "__main__":
     Thread(target=run_flask).start()
+    Thread(target=start_loop).start()
     run_discord()
