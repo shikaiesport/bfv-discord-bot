@@ -2,7 +2,6 @@ import os
 import discord
 from discord.ext import commands, tasks
 from flask import Flask
-import requests
 
 # ---------------- FLASK (Render Pflicht) ----------------
 app = Flask(__name__)
@@ -22,62 +21,45 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# 👉 HIER SPEICHERN WIR DEN CHANNEL
-ALERT_CHANNEL_ID = None
+# 👉 DEINE DISCORD USER ID HIER EINTRAGEN
+YOUR_USER_ID = 123456789012345678  # <-- ersetzen!
 
-# ---------------- BEISPIEL SERVER DATEN ----------------
+
+# ---------------- SERVER DATEN (PLACEHOLDER) ----------------
 def get_server_data():
-    """
-    🔴 HIER kommt deine echte BFV API rein
-    """
-    # Beispiel Fake-Daten (ersetzen!)
+    # 🔴 HIER deine echte BFV API rein
     return {
         "name": "Underground Server",
         "players": 50
     }
 
 
-# ---------------- ALERT LOOP ----------------
-@tasks.loop(seconds=60)  # alle 60 Sekunden prüfen
+# ---------------- CHECK LOOP ----------------
+@tasks.loop(seconds=60)
 async def check_servers():
-    global ALERT_CHANNEL_ID
-
-    if ALERT_CHANNEL_ID is None:
-        return
-
-    channel = bot.get_channel(ALERT_CHANNEL_ID)
-    if not channel:
-        return
-
     data = get_server_data()
 
     if data["players"] > 45:
-        await channel.send(
-            f"🚨 **ALERT!**\n"
+        user = await bot.fetch_user(YOUR_USER_ID)
+
+        await user.send(
+            f"🚨 **BFV ALERT!**\n"
             f"Server: {data['name']}\n"
-            f"👥 Spieler: {data['players']} (>45!)"
+            f"👥 Spieler: {data['players']} (>45)"
         )
 
 
-# ---------------- EVENTS ----------------
+# ---------------- READY ----------------
 @bot.event
 async def on_ready():
-    print(f"✅ Eingeloggt als {bot.user}")
+    print(f"✅ Online als {bot.user}")
     check_servers.start()
 
 
-# ---------------- COMMANDS ----------------
-@bot.command()
-async def setchannel(ctx):
-    """Setzt den Alert Channel"""
-    global ALERT_CHANNEL_ID
-    ALERT_CHANNEL_ID = ctx.channel.id
-    await ctx.send("✅ Alert Channel gesetzt!")
-
-
+# ---------------- TEST COMMAND ----------------
 @bot.command()
 async def test(ctx):
-    await ctx.send("🔧 Bot funktioniert!")
+    await ctx.send("Bot läuft!")
 
 
 # ---------------- START ----------------
